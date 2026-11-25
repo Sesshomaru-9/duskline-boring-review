@@ -27,7 +27,8 @@ MIN_CHARS = 1
 
 def _validate_entry(text):
     """Gate matching the kit's sealed scorer: UTF-8 text of 1 to 200
-    characters, not only whitespace, on a single line."""
+    characters, not only whitespace, on a single line, with no control
+    characters and no more than 200 bytes on disk."""
     if not isinstance(text, str):
         return False
     if not (MIN_CHARS <= len(text) <= MAX_CHARS):
@@ -36,11 +37,30 @@ def _validate_entry(text):
         return False
     if "\n" in text or "\r" in text:
         return False
+    # Control characters (tab, bell, escapes, ...) must not sneak into a
+    # one-line review, and the written file must itself fit the 200-byte
+    # bound even if a future edit swaps in multi-byte characters.
+    if any(ord(ch) < 0x20 for ch in text):
+        return False
     try:
-        text.encode("utf-8")
+        encoded = text.encode("utf-8")
     except UnicodeEncodeError:
         return False
+    if not (MIN_CHARS <= len(encoded) <= MAX_CHARS):
+        return False
     return True
+
+
+def _resolve_output_dir():
+    """Return the output directory from MAKEFUN_OUTPUT_DIR, or None.
+
+    The program writes only here — never into the repo or anywhere else.
+    """
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
+    if not out_dir:
+        print("MAKEFUN_OUTPUT_DIR is not set", file=sys.stderr)
+        return None
+    return out_dir
 
 
 def main():
@@ -48,9 +68,8 @@ def main():
         print("entry failed validation", file=sys.stderr)
         return 1
 
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
-    if not out_dir:
-        print("MAKEFUN_OUTPUT_DIR is not set", file=sys.stderr)
+    out_dir = _resolve_output_dir()
+    if out_dir is None:
         return 1
 
     try:
